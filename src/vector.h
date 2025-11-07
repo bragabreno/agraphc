@@ -21,8 +21,19 @@
 #ifndef T
 	#error "You must define T prior to the inclusion of vector.h"
 #endif
+
+/* Vector interface */
 #ifndef agc_vec_element_cleanup
 	#define agc_vec_element_cleanup agc_vec_noop
+#endif
+#ifndef agc_vec_alloc
+	#define agc_vec_alloc malloc
+#endif
+#ifndef agc_vec_realloc
+	#define agc_vec_realloc realloc
+#endif
+#ifndef agc_vec_free
+	#define agc_vec_free free
 #endif
 
 #define agc_vec_t agc_paste2(AGC_VEC_PREFIX, _t)
@@ -67,7 +78,7 @@ agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap)
 	if (!OUT_vec) return AGC_ERR_NULL;
 	if (init_cap <= 0) init_cap = AGC_VEC_DEFAULT_CAP;
 
-	T *buf = malloc(sizeof(T) * init_cap);
+	T *buf = agc_vec_alloc(sizeof(T) * init_cap);
 	if (!buf) return AGC_ERR_MEMORY;
 
 	OUT_vec->buf = buf;
@@ -85,7 +96,7 @@ agc_vec_fn(cleanup)(agc_vec_t vec[static 1])
 	for (int32_t i = 0; i < vec->len; i++)
 		agc_vec_element_cleanup(vec->buf + i);
 
-	free(vec->buf);
+	agc_vec_free(vec->buf);
 	vec->buf = nullptr;
 	vec->cap = 0;
 	vec->len = 0;
@@ -97,7 +108,7 @@ agc_vec_fn(reserve)(agc_vec_t vec[static 1], int32_t new_cap)
 	if (!vec) return AGC_ERR_NULL;
 	if (new_cap <= vec->cap) return AGC_OK;
 
-	T *new_buf = realloc(vec->buf, sizeof(T) * new_cap);
+	T *new_buf = agc_vec_realloc(vec->buf, sizeof(T) * new_cap);
 	if (!new_buf) return AGC_ERR_MEMORY;
 
 	vec->buf = new_buf;
@@ -140,9 +151,31 @@ agc_vec_fn(resize)(agc_vec_t vec[static 1], int32_t new_len)
 }
 
 static agc_err_t
-agc_vec_fn(put)(agc_vec_t vec[static 1], int32_t pos, T *value)
+agc_vec_fn(shrink_to_fit)(agc_vec_t vec[static 1])
 {
-	if (!vec || !value) return AGC_ERR_NULL;
+	if (!vec) return AGC_ERR_NULL;
+	if (vec->len == vec->cap) return AGC_OK;
+
+	if (vec->len == 0)
+	{
+		agc_vec_free(vec->buf);
+		vec->buf = nullptr;
+		vec->cap = 0;
+		return AGC_OK;
+	}
+
+	T *new_buf = agc_vec_realloc(vec->buf, sizeof(T) * vec->len);
+	if (!new_buf) return AGC_ERR_MEMORY;
+
+	vec->buf = new_buf;
+	vec->cap = vec->len;
+	return AGC_OK;
+}
+
+static agc_err_t
+agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value)
+{
+	if (!vec || !value || !*value) return AGC_ERR_NULL;
 	if (pos < 0) return AGC_ERR_INVALID;
 	if (pos > vec->len) return AGC_ERR_OOB;
 
@@ -150,8 +183,9 @@ agc_vec_fn(put)(agc_vec_t vec[static 1], int32_t pos, T *value)
 	if (err) return err;
 
 	memmove(vec->buf + pos + 1, vec->buf + pos, (vec->len - pos) * sizeof(T));
-	memcpy(vec->buf + pos, value, sizeof(T));
-	memset(value, 0, sizeof(T));
+	memcpy(vec->buf + pos, *value, sizeof(T));
+	free(*value);
+	*value = nullptr;
 	vec->len++;
 
 	return AGC_OK;
@@ -175,9 +209,9 @@ agc_vec_fn(put_cpy)(agc_vec_t vec[static 1], int32_t pos, T value)
 }
 
 static agc_err_t
-agc_vec_fn(push)(agc_vec_t vec[static 1], T *value)
+agc_vec_fn(push_mv)(agc_vec_t vec[static 1], T **value)
 {
-	return agc_vec_fn(put)(vec, vec->len, value);
+	return agc_vec_fn(put_mv)(vec, vec->len, value);
 }
 
 static agc_err_t
@@ -187,7 +221,26 @@ agc_vec_fn(push_cpy)(agc_vec_t vec[static 1], T value)
 }
 
 static agc_err_t
-agc_vec_fn(move_range)(agc_vec_t vec[static 1], int32_t pos, T *arr, int32_t count)
+agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t count)
+{
+	if (!vec || !arr) return AGC_ERR_NULL;
+	if (pos < 0 || count < 0) return AGC_ERR_INVALID;
+	if (pos > vec->len) return AGC_ERR_OOB;
+
+	agc_err_t err = agc_vec_fn(grow)(vec, vec->len + count);
+	if (err) return err;
+
+	memmove(vec->buf + pos + count, vec->buf + pos, (vec->len - pos) * sizeof(T));
+	memcpy(vec->buf + pos, *arr, count * sizeof(T));
+	free(*arr);
+	*arr = nullptr;
+	vec->len += count;
+
+	return AGC_OK;
+}
+
+static agc_err_t
+agc_vec_fn(array_cpy)(agc_vec_t vec[static 1], int32_t pos, T arr[static 1], int32_t count)
 {
 	if (!vec || !arr) return AGC_ERR_NULL;
 	if (pos < 0 || count < 0) return AGC_ERR_INVALID;
@@ -198,14 +251,13 @@ agc_vec_fn(move_range)(agc_vec_t vec[static 1], int32_t pos, T *arr, int32_t cou
 
 	memmove(vec->buf + pos + count, vec->buf + pos, (vec->len - pos) * sizeof(T));
 	memcpy(vec->buf + pos, arr, count * sizeof(T));
-	memset(arr, 0, count * sizeof(T));
 	vec->len += count;
 
 	return AGC_OK;
 }
 
 static agc_err_t
-agc_vec_fn(pop_from)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value)
+agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value)
 {
 	if (!vec) return AGC_ERR_NULL;
 	if (pos < 0 || pos >= vec->len) return AGC_ERR_OOB;
@@ -228,7 +280,7 @@ agc_vec_fn(pop_from)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value)
 static agc_err_t
 agc_vec_fn(pop)(agc_vec_t vec[static 1], T *OUT_value)
 {
-	return agc_vec_fn(pop_from)(vec, vec->len - 1, OUT_value);
+	return agc_vec_fn(pop_at)(vec, vec->len - 1, OUT_value);
 }
 
 static agc_err_t
@@ -289,11 +341,11 @@ agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j)
 }
 
 static agc_err_t
-agc_vec_fn(move_range_vec)(agc_vec_t  vec[static 1],
-                           int32_t    pos,
-                           agc_vec_t *subvec,
-                           int32_t    first,
-                           int32_t    last)
+agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
+                         int32_t    pos,
+                         agc_vec_t *subvec,
+                         int32_t    first,
+                         int32_t    last)
 {
 	if (!subvec) return AGC_OK;
 	if (vec == subvec) return AGC_ERR_INVALID;
@@ -301,7 +353,7 @@ agc_vec_fn(move_range_vec)(agc_vec_t  vec[static 1],
 
 	int32_t count = last - first;
 
-	agc_err_t err = agc_vec_fn(move_range)(vec, pos, subvec->buf + first, count);
+	agc_err_t err = agc_vec_fn(array_cpy)(vec, pos, subvec->buf + first, count);
 	if (err) return err;
 
 	memmove(subvec->buf + first, subvec->buf + last, (subvec->len - last) * sizeof(T));
