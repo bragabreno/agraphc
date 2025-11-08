@@ -26,6 +26,9 @@
 #ifndef agc_vec_element_cleanup
 	#define agc_vec_element_cleanup agc_vec_noop
 #endif
+#ifndef agc_vec_element_deepcopy
+	#define agc_vec_element_deepcopy 0
+#endif
 #ifndef agc_vec_alloc
 	#define agc_vec_alloc malloc
 #endif
@@ -133,6 +136,7 @@ agc_vec_fn(resize)(agc_vec_t vec[static 1], int32_t new_len)
 {
 	if (!vec) return AGC_ERR_NULL;
 	if (new_len < 0) return AGC_ERR_INVALID;
+	agc_err_t err = AGC_OK;
 
 	if (new_len < vec->len)
 	{
@@ -141,13 +145,13 @@ agc_vec_fn(resize)(agc_vec_t vec[static 1], int32_t new_len)
 		memset(vec->buf + new_len, 0, (vec->len - new_len) * sizeof(T));
 	}
 
-	agc_err_t err = agc_vec_fn(grow)(vec, new_len);
+	err = agc_vec_fn(grow)(vec, new_len);
 	if (err) return err;
 
 	if (new_len > vec->len) memset(vec->buf + vec->len, 0, (new_len - vec->len) * sizeof(T));
 
 	vec->len = new_len;
-	return AGC_OK;
+	return err;
 }
 
 static agc_err_t
@@ -173,39 +177,41 @@ agc_vec_fn(shrink_to_fit)(agc_vec_t vec[static 1])
 }
 
 static agc_err_t
-agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value)
-{
-	if (!vec || !value || !*value) return AGC_ERR_NULL;
-	if (pos < 0) return AGC_ERR_INVALID;
-	if (pos > vec->len) return AGC_ERR_OOB;
-
-	agc_err_t err = agc_vec_fn(grow)(vec, vec->len + 1);
-	if (err) return err;
-
-	memmove(vec->buf + pos + 1, vec->buf + pos, (vec->len - pos) * sizeof(T));
-	memcpy(vec->buf + pos, *value, sizeof(T));
-	free(*value);
-	*value = nullptr;
-	vec->len++;
-
-	return AGC_OK;
-}
-
-static agc_err_t
 agc_vec_fn(put_cpy)(agc_vec_t vec[static 1], int32_t pos, T value)
 {
 	if (!vec) return AGC_ERR_NULL;
 	if (pos < 0) return AGC_ERR_INVALID;
 	if (pos > vec->len) return AGC_ERR_OOB;
+	agc_err_t err = AGC_OK;
 
-	agc_err_t err = agc_vec_fn(grow)(vec, vec->len + 1);
+	err = agc_vec_fn(grow)(vec, vec->len + 1);
 	if (err) return err;
 
 	memmove(vec->buf + pos + 1, vec->buf + pos, (vec->len - pos) * sizeof(T));
 	vec->buf[pos] = value;
 	vec->len++;
 
-	return AGC_OK;
+	return err;
+}
+
+static agc_err_t
+agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value)
+{
+	if (!vec || !value) return AGC_ERR_NULL;
+	if (pos < 0) return AGC_ERR_INVALID;
+	if (pos > vec->len) return AGC_ERR_OOB;
+	agc_err_t err = AGC_OK;
+
+	err = agc_vec_fn(grow)(vec, vec->len + 1);
+	if (err) return err;
+
+	memmove(vec->buf + pos + 1, vec->buf + pos, (vec->len - pos) * sizeof(T));
+	memcpy(vec->buf + pos, *value, sizeof(T));
+	agc_vec_free(*value);
+	*value = nullptr;
+	vec->len++;
+
+	return err;
 }
 
 static agc_err_t
@@ -221,39 +227,35 @@ agc_vec_fn(push_cpy)(agc_vec_t vec[static 1], T value)
 }
 
 static agc_err_t
-agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t count)
-{
-	if (!vec || !arr) return AGC_ERR_NULL;
-	if (pos < 0 || count < 0) return AGC_ERR_INVALID;
-	if (pos > vec->len) return AGC_ERR_OOB;
-
-	agc_err_t err = agc_vec_fn(grow)(vec, vec->len + count);
-	if (err) return err;
-
-	memmove(vec->buf + pos + count, vec->buf + pos, (vec->len - pos) * sizeof(T));
-	memcpy(vec->buf + pos, *arr, count * sizeof(T));
-	free(*arr);
-	*arr = nullptr;
-	vec->len += count;
-
-	return AGC_OK;
-}
-
-static agc_err_t
 agc_vec_fn(array_cpy)(agc_vec_t vec[static 1], int32_t pos, T arr[static 1], int32_t count)
 {
 	if (!vec || !arr) return AGC_ERR_NULL;
 	if (pos < 0 || count < 0) return AGC_ERR_INVALID;
 	if (pos > vec->len) return AGC_ERR_OOB;
+	agc_err_t err = AGC_OK;
 
-	agc_err_t err = agc_vec_fn(grow)(vec, vec->len + count);
+	err = agc_vec_fn(grow)(vec, vec->len + count);
 	if (err) return err;
 
 	memmove(vec->buf + pos + count, vec->buf + pos, (vec->len - pos) * sizeof(T));
 	memcpy(vec->buf + pos, arr, count * sizeof(T));
 	vec->len += count;
 
-	return AGC_OK;
+	return err;
+}
+
+static agc_err_t
+agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t count)
+{
+	if (!vec || !arr) return AGC_ERR_NULL;
+	agc_err_t err = AGC_OK;
+
+	err = agc_vec_fn(array_cpy)(vec, pos, *arr, count);
+	if (err) return err;
+
+	agc_vec_free(*arr);
+	*arr = nullptr;
+	return err;
 }
 
 static agc_err_t
@@ -284,19 +286,6 @@ agc_vec_fn(pop)(agc_vec_t vec[static 1], T *OUT_value)
 }
 
 static agc_err_t
-agc_vec_fn(erase)(agc_vec_t vec[static 1], int32_t pos)
-{
-	if (!vec) return AGC_ERR_NULL;
-	if (pos < 0 || pos >= vec->len) return AGC_ERR_OOB;
-
-	agc_vec_element_cleanup(vec->buf + pos);
-	memmove(vec->buf + pos, vec->buf + pos + 1, (vec->len - pos - 1) * sizeof(T));
-	vec->len--;
-
-	return AGC_OK;
-}
-
-static agc_err_t
 agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last)
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -311,6 +300,12 @@ agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last)
 	vec->len -= count;
 
 	return AGC_OK;
+}
+
+static agc_err_t
+agc_vec_fn(erase)(agc_vec_t vec[static 1], int32_t pos)
+{
+	return agc_vec_fn(erase_range)(vec, pos, pos + 1);
 }
 
 static void
@@ -350,83 +345,27 @@ agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
 	if (!subvec) return AGC_OK;
 	if (vec == subvec) return AGC_ERR_INVALID;
 	if (first >= subvec->len || last > subvec->len || first > last) return AGC_ERR_OOB;
+	agc_err_t err = AGC_OK;
 
 	int32_t count = last - first;
 
-	agc_err_t err = agc_vec_fn(array_cpy)(vec, pos, subvec->buf + first, count);
+	err = agc_vec_fn(array_cpy)(vec, pos, subvec->buf + first, count);
 	if (err) return err;
 
 	memmove(subvec->buf + first, subvec->buf + last, (subvec->len - last) * sizeof(T));
 	subvec->len -= count;
 
-	return AGC_OK;
+	return err;
 }
 
+#if agc_vec_element_deepcopy
 static agc_err_t
-agc_vec_fn(find)(agc_vec_t vec[static 1],
-                 T         value[static 1],
-                 int (*compare)(const T *, const T *),
-                 int32_t OUT_found_at[static 1])
+agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_value)
 {
-	if (!vec || !value || !compare || !OUT_found_at) return AGC_ERR_NULL;
-	*OUT_found_at = -1;
+	if (!vec || !OUT_value) return AGC_ERR_NULL;
+	if (pos < 0 || pos >= vec->len) return AGC_ERR_OOB;
 
-	for (int32_t i = 0; i < vec->len; i++)
-	{
-		if (compare(vec->buf + i, value) == 0)
-		{
-			*OUT_found_at = i;
-			return AGC_OK;
-		}
-	}
-	return AGC_ERR_NOT_FOUND;
+	*OUT_value = agc_vec_element_deepcopy(vec->buf + pos);
+	return *OUT_value ? AGC_OK : AGC_ERR_CALLBACK;
 }
-
-static agc_err_t
-agc_vec_fn(contains)(const agc_vec_t vec[static 1],
-                     const T        *value,
-                     int (*compare)(const T *, const T *),
-                     bool *OUT_contains)
-{
-	if (!vec || !value || !compare || !OUT_contains) return AGC_ERR_NULL;
-
-	int32_t   idx;
-	agc_err_t err = agc_vec_fn(find)(vec, value, compare, &idx);
-	*OUT_contains = (err == AGC_OK);
-	return AGC_OK;
-}
-
-static agc_err_t
-agc_vec_fn(count)(const agc_vec_t vec[static 1],
-                  const T        *value,
-                  int (*compare)(const T *, const T *),
-                  int32_t *OUT_count)
-{
-	if (!vec || !value || !compare || !OUT_count) return AGC_ERR_NULL;
-
-	*OUT_count = 0;
-	for (int32_t i = 0; i < vec->len; i++)
-	{
-		if (compare(vec->buf + i, value) == 0) (*OUT_count)++;
-	}
-	return AGC_OK;
-}
-
-static agc_err_t
-agc_vec_fn(find_if)(const agc_vec_t vec[static 1],
-                    bool (*predicate)(const T *),
-                    int32_t OUT_found_at[static 1])
-{
-	if (!vec || !predicate || !OUT_found_at) return AGC_ERR_NULL;
-	*OUT_found_at = -1;
-
-	for (int32_t i = 0; i < vec->len; i++)
-	{
-		if (predicate(vec->buf + i))
-		{
-			*OUT_found_at = i;
-			return AGC_OK;
-		}
-	}
-	return AGC_ERR_NOT_FOUND;
-}
+#endif
