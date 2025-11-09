@@ -5,6 +5,8 @@
 #include "common.h"
 #include "error.h"
 
+#define AGC_VEC_API [[maybe_unused]] static
+
 #ifndef AGC_VEC_GROWTH_FACTOR
 	#define AGC_VEC_GROWTH_FACTOR 2
 #endif
@@ -75,7 +77,7 @@ typedef struct agc_vec_t
 #define agc_vec_foreach(vec, element)                                                              \
 	for (auto element = (vec)->buf; element < (vec)->buf + (vec)->len; ++element)
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap)
 {
 	if (!OUT_vec) return AGC_ERR_NULL;
@@ -91,7 +93,7 @@ agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap)
 	return AGC_OK;
 }
 
-static void
+AGC_VEC_API void
 agc_vec_fn(cleanup)(agc_vec_t vec[static 1])
 {
 	if (!vec) return;
@@ -105,7 +107,7 @@ agc_vec_fn(cleanup)(agc_vec_t vec[static 1])
 	vec->len = 0;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(reserve)(agc_vec_t vec[static 1], int32_t new_cap)
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -119,7 +121,7 @@ agc_vec_fn(reserve)(agc_vec_t vec[static 1], int32_t new_cap)
 	return AGC_OK;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(grow)(agc_vec_t vec[static 1], int32_t min_cap)
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -131,7 +133,7 @@ agc_vec_fn(grow)(agc_vec_t vec[static 1], int32_t min_cap)
 	return agc_vec_fn(reserve)(vec, new_cap);
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(resize)(agc_vec_t vec[static 1], int32_t new_len)
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -154,7 +156,7 @@ agc_vec_fn(resize)(agc_vec_t vec[static 1], int32_t new_len)
 	return err;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(shrink_to_fit)(agc_vec_t vec[static 1])
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -176,7 +178,7 @@ agc_vec_fn(shrink_to_fit)(agc_vec_t vec[static 1])
 	return AGC_OK;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(put_cpy)(agc_vec_t vec[static 1], int32_t pos, T value)
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -194,7 +196,7 @@ agc_vec_fn(put_cpy)(agc_vec_t vec[static 1], int32_t pos, T value)
 	return err;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value)
 {
 	if (!vec || !value) return AGC_ERR_NULL;
@@ -214,19 +216,19 @@ agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value)
 	return err;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(push_mv)(agc_vec_t vec[static 1], T **value)
 {
 	return agc_vec_fn(put_mv)(vec, vec->len, value);
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(push_cpy)(agc_vec_t vec[static 1], T value)
 {
 	return agc_vec_fn(put_cpy)(vec, vec->len, value);
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(array_cpy)(agc_vec_t vec[static 1], int32_t pos, T arr[static 1], int32_t count)
 {
 	if (!vec || !arr) return AGC_ERR_NULL;
@@ -244,7 +246,7 @@ agc_vec_fn(array_cpy)(agc_vec_t vec[static 1], int32_t pos, T arr[static 1], int
 	return err;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t count)
 {
 	if (!vec || !arr) return AGC_ERR_NULL;
@@ -258,8 +260,8 @@ agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t coun
 	return err;
 }
 
-static agc_err_t
-agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value)
+AGC_VEC_API agc_err_t
+agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T OUT_value[static 1])
 {
 	if (!vec) return AGC_ERR_NULL;
 	if (pos < 0 || pos >= vec->len) return AGC_ERR_OOB;
@@ -279,13 +281,13 @@ agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value)
 	return AGC_OK;
 }
 
-static agc_err_t
-agc_vec_fn(pop)(agc_vec_t vec[static 1], T *OUT_value)
+AGC_VEC_API agc_err_t
+agc_vec_fn(pop)(agc_vec_t vec[static 1], T OUT_value[static 1])
 {
 	return agc_vec_fn(pop_at)(vec, vec->len - 1, OUT_value);
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last)
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -302,13 +304,13 @@ agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last)
 	return AGC_OK;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(erase)(agc_vec_t vec[static 1], int32_t pos)
 {
 	return agc_vec_fn(erase_range)(vec, pos, pos + 1);
 }
 
-static void
+AGC_VEC_API void
 agc_vec_fn(clear)(agc_vec_t vec[static 1])
 {
 	if (!vec) return;
@@ -320,7 +322,7 @@ agc_vec_fn(clear)(agc_vec_t vec[static 1])
 	vec->len = 0;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j)
 {
 	if (!vec) return AGC_ERR_NULL;
@@ -335,7 +337,7 @@ agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j)
 	return AGC_OK;
 }
 
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
                          int32_t    pos,
                          agc_vec_t *subvec,
@@ -359,7 +361,7 @@ agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
 }
 
 #if agc_vec_element_deepcopy
-static agc_err_t
+AGC_VEC_API agc_err_t
 agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_value)
 {
 	if (!vec || !OUT_value) return AGC_ERR_NULL;
