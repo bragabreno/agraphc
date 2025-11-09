@@ -28,6 +28,9 @@
 #ifndef agc_vec_element_cleanup
 	#define agc_vec_element_cleanup agc_vec_noop
 #endif
+#ifndef agc_vec_may_use_stack
+	#define agc_vec_may_use_stack 1
+#endif
 #ifndef agc_vec_element_deepcopy
 	#define agc_vec_element_deepcopy 0
 #endif
@@ -62,7 +65,10 @@ typedef struct agc_vec_t
 {
 	int32_t len;
 	int32_t cap;
-	T      *buf;
+#if agc_vec_may_use_stack
+	bool stack_buf;
+#endif
+	T *buf;
 } agc_vec_t;
 
 #define agc_vec_foreach_do(vec, func)                                                              \
@@ -77,6 +83,31 @@ typedef struct agc_vec_t
 #define agc_vec_foreach(vec, element)                                                              \
 	for (auto element = (vec)->buf; element < (vec)->buf + (vec)->len; ++element)
 
+#if agc_vec_may_use_stack
+AGC_VEC_API agc_err_t
+agc_vec_fn(init_from_stack_buf)(agc_vec_t OUT_vec[static 1],
+                                int32_t   count,
+                                T         stack_buf[static count])
+{
+	if (!OUT_vec) return AGC_ERR_NULL;
+	if (!stack_buf) return AGC_ERR_NULL;
+
+	OUT_vec->len       = 0;
+	OUT_vec->cap       = count;
+	OUT_vec->stack_buf = true;
+	OUT_vec->buf       = stack_buf;
+
+	return AGC_OK;
+}
+
+	#define agc_vec_init_from_stack_buf(vec, arr)                                              \
+		agc_vec_fn(init_from_stack_buf)((vec), agc_countof(arr), (arr))
+#endif
+
+#if agc_vec_may_use_stack
+AGC_VEC_API agc_err_t agc_vec_fn(buf_switch_to_heap)(agc_vec_t vec[static 1]);
+#endif
+
 AGC_VEC_API agc_err_t
 agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap)
 {
@@ -86,9 +117,12 @@ agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap)
 	T *buf = agc_vec_alloc(sizeof(T) * init_cap);
 	if (!buf) return AGC_ERR_MEMORY;
 
-	OUT_vec->buf = buf;
 	OUT_vec->len = 0;
 	OUT_vec->cap = init_cap;
+#if agc_vec_may_use_stack
+	OUT_vec->stack_buf = false;
+#endif
+	OUT_vec->buf = buf;
 
 	return AGC_OK;
 }
@@ -101,6 +135,13 @@ agc_vec_fn(cleanup)(agc_vec_t vec[static 1])
 	for (int32_t i = 0; i < vec->len; i++)
 		agc_vec_element_cleanup(vec->buf + i);
 
+#if agc_vec_may_use_stack
+	if (vec->stack_buf)
+	{
+		vec->len = 0;
+		return;
+	}
+#endif
 	agc_vec_free(vec->buf);
 	vec->buf = nullptr;
 	vec->cap = 0;
@@ -113,6 +154,13 @@ agc_vec_fn(reserve)(agc_vec_t vec[static 1], int32_t new_cap)
 	if (!vec) return AGC_ERR_NULL;
 	if (new_cap <= vec->cap) return AGC_OK;
 
+#if agc_vec_may_use_stack
+	if (vec->stack_buf)
+	{
+		agc_err_t err = agc_vec_fn(buf_switch_to_heap)(vec);
+		if (err) return err;
+	}
+#endif
 	T *new_buf = agc_vec_realloc(vec->buf, sizeof(T) * new_cap);
 	if (!new_buf) return AGC_ERR_MEMORY;
 
@@ -161,6 +209,13 @@ agc_vec_fn(shrink_to_fit)(agc_vec_t vec[static 1])
 {
 	if (!vec) return AGC_ERR_NULL;
 	if (vec->len == vec->cap) return AGC_OK;
+#if agc_vec_may_use_stack
+	if (vec->stack_buf)
+	{
+		agc_err_t err = agc_vec_fn(buf_switch_to_heap)(vec);
+		if (err) return err;
+	}
+#endif
 
 	if (vec->len == 0)
 	{
@@ -260,8 +315,43 @@ agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t coun
 	return err;
 }
 
+#if agc_vec_may_use_stack
 AGC_VEC_API agc_err_t
-agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T OUT_value[static 1])
+agc_vec_fn(buf_switch_to_heap)(agc_vec_t vec[static 1])
+{
+	if (!vec) return AGC_ERR_NULL;
+	if (!vec->stack_buf) return AGC_ERR_INVALID;
+	agc_err_t err = AGC_OK;
+
+	T      *stack_buf = vec->buf;
+	int32_t old_len   = vec->len;
+	int32_t old_cap   = vec->cap;
+
+	err = agc_vec_fn(init)(vec, old_cap);
+	if (err)
+	{
+		vec->buf = stack_buf;
+		return err;
+	}
+
+	err = agc_vec_fn(array_cpy)(vec, 0, stack_buf, old_len);
+	if (err)
+	{
+		agc_vec_free(vec->buf);
+		vec->buf = stack_buf;
+		vec->len = old_len;
+		vec->cap = old_cap;
+
+		return err;
+	}
+
+	vec->stack_buf = false;
+	return err;
+}
+#endif
+
+AGC_VEC_API agc_err_t
+agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value)
 {
 	if (!vec) return AGC_ERR_NULL;
 	if (pos < 0 || pos >= vec->len) return AGC_ERR_OOB;
