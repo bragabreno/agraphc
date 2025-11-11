@@ -1,3 +1,4 @@
+#include <stdckdint.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -366,7 +367,23 @@ agc_vec_fn(grow)(agc_vec_t vec[static 1], int32_t min_cap)
 	if (!vec) return AGC_ERR_NULL;
 	if (min_cap <= vec->cap) return AGC_OK;
 
-	int32_t new_cap = agc_max(vec->cap * AGC_VEC_GROWTH_FACTOR, min_cap);
+	int32_t new_cap   = { };
+	int32_t grown_cap = { };
+
+	if (ckd_mul(&grown_cap, vec->cap, AGC_VEC_GROWTH_FACTOR))
+	{
+		// Overflow occurred
+		return AGC_ERR_OVERFLOW;
+	}
+
+	new_cap = agc_max(grown_cap, min_cap);
+
+	size_t alloc_size;
+	if (ckd_mul(&alloc_size, (size_t)new_cap, sizeof(T)))
+	{
+		return AGC_ERR_OVERFLOW;
+	}
+
 	if (vec->cap == 0 && new_cap < 1) new_cap = 1;
 
 	return agc_vec_fn(reserve)(vec, new_cap);
