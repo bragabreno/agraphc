@@ -66,9 +66,8 @@ agc_vec_fn(noop)(T *)
 	#define agc_vec_free free
 #endif
 
-/* Interface Validation */
 // clang-format off
-
+/* Interface Validation */
 #if (AGC_VEC_GROWTH_FACTOR) < 1
 #  error "AGC_VEC_GROWTH_FACTOR must be >= 1"
 #endif
@@ -82,6 +81,7 @@ agc_validate_interface(agc_vec_element_deepcopy, agc_err_t (*)(T *))
 #if agc_vec_element_compare
 agc_validate_interface(agc_vec_element_compare, int32_t (*)(T *, T *))
 #endif
+
 
 typedef struct agc_vec_t
 {
@@ -107,10 +107,9 @@ typedef struct agc_vec_t
 	for (auto(element) = (vec)->buf; (element) < (vec)->buf + (vec)->len; ++(element))
 
 
+
 /* The "move"/"copy" behavior may be a bit deceiving at first,
  * so I might document it eventually                        */
-
-
 AGC_VEC_API agc_err_t 
 agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap);
 
@@ -220,7 +219,6 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1],
 /* Simple accessors do not return agc_err_t, which is a bit odd,
  * but a necessary evil, as the out parameter convention used
  * here might become a hassle to client code and to the compiler.*/
-
 AGC_VEC_API int32_t
 agc_vec_fn(len)(const agc_vec_t vec[static 1])
 {
@@ -234,6 +232,7 @@ agc_vec_fn(cap)(const agc_vec_t vec[static 1])
 	if (!vec) return -1;
 	return vec->cap;
 }
+
 /* This returns an empty object on failure */
 AGC_VEC_API T
 agc_vec_fn(at)(const agc_vec_t vec[static 1], int32_t pos)
@@ -644,30 +643,30 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 #endif
 
 #warning "Undefining macros from the previous vector"
-#ifndef AGC_VEC_GROWTH_FACTOR
+#ifdef AGC_VEC_GROWTH_FACTOR
 	#undef AGC_VEC_GROWTH_FACTOR
 #endif
-#ifndef AGC_VEC_DEFAULT_CAP
+#ifdef AGC_VEC_DEFAULT_CAP
 	#undef AGC_VEC_DEFAULT_CAP
 #endif
-#ifndef agc_vec_element_cleanup
+#ifdef agc_vec_element_cleanup
 	#undef agc_vec_element_cleanup
 #endif
-#ifndef agc_vec_may_use_stack
+#ifdef agc_vec_may_use_stack
 	#undef agc_vec_may_use_stack
 #endif
-#ifndef agc_vec_element_deepcopy
+#ifdef agc_vec_element_deepcopy
 	#undef agc_vec_element_deepcopy
 #endif
-#ifndef agc_vec_element_compare
+#ifdef agc_vec_element_compare
 	#undef agc_vec_element_compare
 #endif
-#ifndef agc_vec_alloc
+#ifdef agc_vec_alloc
 	#undef agc_vec_alloc
 #endif
-#ifndef agc_vec_realloc
+#ifdef agc_vec_realloc
 	#undef agc_vec_realloc
 #endif
-#ifndef agc_vec_free
+#ifdef agc_vec_free
 	#undef agc_vec_free
 #endif
