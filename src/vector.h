@@ -47,12 +47,16 @@ agc_vec_fn(noop)(T *)
 
 /* Deep-copyable */
 #ifndef agc_vec_element_deepcopy
-	#define agc_vec_element_deepcopy 0
+	#define agc_vec_may_use_element_deepcopy 0
+#else
+	#define agc_vec_may_use_element_deepcopy 1
 #endif
 
 /* Comparable */
 #ifndef agc_vec_element_compare
-	#define agc_vec_element_compare 0
+	#define agc_vec_may_use_element_compare 0
+#else
+	#define agc_vec_may_use_element_compare 1
 #endif
 
 /* Allocator */
@@ -75,11 +79,11 @@ agc_vec_fn(noop)(T *)
 #  error "AGC_VEC_DEFAULT_CAP must be > 0"
 #endif
 agc_validate_interface(agc_vec_element_cleanup, void (*)(T *))
-#if agc_vec_element_deepcopy
+#if agc_vec_may_use_element_deepcopy
 agc_validate_interface(agc_vec_element_deepcopy, agc_err_t (*)(T *))
 #endif
-#if agc_vec_element_compare
-agc_validate_interface(agc_vec_element_compare, int32_t (*)(T *, T *))
+#if agc_vec_may_use_element_compare
+agc_validate_interface(agc_vec_element_compare, int32_t (*)(const T *, const T *))
 #endif
 
 
@@ -194,7 +198,8 @@ agc_vec_fn(clear)(agc_vec_t vec[static 1]);
 AGC_VEC_API agc_err_t 
 agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j);
 
-#if agc_vec_element_compare
+#if agc_vec_may_use_element_compare
+AGC_VEC_API agc_err_t
 agc_vec_fn(find)(const agc_vec_t vec[static 1], const T *value, int32_t *OUT_pos);
 
 AGC_VEC_API bool
@@ -207,7 +212,7 @@ agc_vec_fn(merge_subvec)(agc_vec_t           vec[static 1],
                                    agc_vec_t          *subvec,
                                    int32_t             first,
                                    int32_t             last);
-#if agc_vec_element_deepcopy
+#if agc_vec_may_use_element_deepcopy
 AGC_VEC_API agc_err_t 
 agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1],
                                                int32_t         pos,
@@ -539,7 +544,8 @@ AGC_VEC_API agc_err_t
 agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last)
 {
 	if (!vec) return AGC_ERR_NULL;
-	if (first >= vec->len || last > vec->len || first > last) return AGC_ERR_OOB;
+	if (first < 0 || last < 0 || first >= vec->len || last > vec->len || first > last)
+		return AGC_ERR_OOB;
 
 	int32_t count = last - first;
 
@@ -584,7 +590,7 @@ agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j)
 
 	return AGC_OK;
 }
-#if agc_vec_element_compare
+#if agc_vec_may_use_element_compare
 AGC_VEC_API agc_err_t
 agc_vec_fn(find)(const agc_vec_t vec[static 1], const T *value, int32_t *OUT_pos)
 {
@@ -630,7 +636,7 @@ agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
 	return err;
 }
 
-#if agc_vec_element_deepcopy
+#if agc_vec_may_use_element_deepcopy
 AGC_VEC_API agc_err_t
 agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_value)
 {
@@ -658,8 +664,14 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 #ifdef agc_vec_element_deepcopy
 	#undef agc_vec_element_deepcopy
 #endif
+#ifdef agc_vec_may_use_element_deepcopy
+	#undef agc_vec_may_use_element_deepcopy
+#endif
 #ifdef agc_vec_element_compare
 	#undef agc_vec_element_compare
+#endif
+#ifdef agc_vec_may_use_element_compare
+	#undef agc_vec_may_use_element_compare
 #endif
 #ifdef agc_vec_alloc
 	#undef agc_vec_alloc
