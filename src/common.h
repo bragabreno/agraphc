@@ -11,4 +11,7 @@
 #define agc_paste2(a, b) agc_concat2(a, b)
 #define agc_paste3(a, b, c) agc_concat3(a, b, c)
 
+#define agc_validate_interface(function, interface)                                                \
+	static_assert(_Generic((function), interface: 1, default: 0),                              \
+	              #function " does not match " #interface);
 #endif // !AGC_COMMON_H

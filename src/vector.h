@@ -15,8 +15,6 @@
 	#define AGC_VEC_DEFAULT_CAP 8
 #endif
 
-#define agc_vec_noop(ptr) ((void)0)
-
 #ifndef AGC_VEC_PREFIX
 	#error "You must define AGC_VEC_PREFIX prior to the inclusion of vector.h"
 #endif
@@ -24,16 +22,40 @@
 	#error "You must define T prior to the inclusion of vector.h"
 #endif
 
-/* Vector interface */
+/* Handle macro-generated names nicely */
+#define agc_vec_t agc_paste2(AGC_VEC_PREFIX, _t)
+#define agc_vec_fn(name) agc_paste3(AGC_VEC_PREFIX, _, name)
+
+AGC_VEC_API void
+agc_vec_fn(noop)(T *)
+
+{
+	(void)1;
+}
+
+/*                  Vector interface                 */
+
+/* Trivially cleaned up */
 #ifndef agc_vec_element_cleanup
-	#define agc_vec_element_cleanup agc_vec_noop
+	#define agc_vec_element_cleanup agc_vec_fn(noop)
 #endif
+
+/* Buffer */
 #ifndef agc_vec_may_use_stack
 	#define agc_vec_may_use_stack 1
 #endif
+
+/* Deep-copyable */
 #ifndef agc_vec_element_deepcopy
 	#define agc_vec_element_deepcopy 0
 #endif
+
+/* Comparable */
+#ifndef agc_vec_element_compare
+	#define agc_vec_element_compare 0
+#endif
+
+/* Allocator */
 #ifndef agc_vec_alloc
 	#define agc_vec_alloc malloc
 #endif
@@ -44,22 +66,22 @@
 	#define agc_vec_free free
 #endif
 
-#define agc_vec_t agc_paste2(AGC_VEC_PREFIX, _t)
-#define agc_vec_fn(name) agc_paste3(AGC_VEC_PREFIX, _, name)
+/* Interface Validation */
+// clang-format off
 
-#define agc_vec_empty(vec) ((vec)->len == 0)
-
-#define agc_vec_len(vec) ((vec)->len)
-#define agc_vec_cap(vec) ((vec)->cap)
-
-#define agc_vec_beg(vec) ((vec)->buf)
-#define agc_vec_end(vec) ((vec)->buf + (vec)->len)
-
-#define agc_vec_at(vec, pos) ((vec)->buf[pos])
-#define agc_vec_ptr_at(vec, pos) ((vec)->buf + (pos))
-
-#define agc_vec_front(vec) ((vec)->buf[0])
-#define agc_vec_back(vec) ((vec)->buf[(vec)->len - 1])
+#if (AGC_VEC_GROWTH_FACTOR) < 1
+#  error "AGC_VEC_GROWTH_FACTOR must be >= 1"
+#endif
+#if (AGC_VEC_DEFAULT_CAP) <= 0
+#  error "AGC_VEC_DEFAULT_CAP must be > 0"
+#endif
+agc_validate_interface(agc_vec_element_cleanup, void (*)(T *))
+#if agc_vec_element_deepcopy
+agc_validate_interface(agc_vec_element_deepcopy, agc_err_t (*)(T *))
+#endif
+#if agc_vec_element_compare
+agc_validate_interface(agc_vec_element_compare, int32_t (*)(T *, T *))
+#endif
 
 typedef struct agc_vec_t
 {
@@ -71,6 +93,7 @@ typedef struct agc_vec_t
 	T *buf;
 } agc_vec_t;
 
+
 #define agc_vec_foreach_do(vec, func)                                                              \
 	do                                                                                         \
 	{                                                                                          \
@@ -81,32 +104,150 @@ typedef struct agc_vec_t
 	} while (0)
 
 #define agc_vec_foreach(vec, element)                                                              \
-	for (auto element = (vec)->buf; element < (vec)->buf + (vec)->len; ++element)
+	for (auto(element) = (vec)->buf; (element) < (vec)->buf + (vec)->len; ++(element))
+
+
+/* The "move"/"copy" behavior may be a bit deceiving at first,
+ * so I might document it eventually                        */
+
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap);
 
 #if agc_vec_may_use_stack
-AGC_VEC_API agc_err_t
+AGC_VEC_API agc_err_t 
 agc_vec_fn(init_from_stack_buf)(agc_vec_t OUT_vec[static 1],
-                                int32_t   count,
-                                T         stack_buf[static count])
+                                                      int32_t   count,
+                                                      T         stack_buf[static count]);
+#endif
+
+AGC_VEC_API void 
+agc_vec_fn(cleanup)(agc_vec_t vec[static 1]);
+
+AGC_VEC_API int32_t
+agc_vec_fn(len)(const agc_vec_t vec[static 1]);
+
+AGC_VEC_API int32_t
+agc_vec_fn(cap)(const agc_vec_t vec[static 1]);
+
+AGC_VEC_API T
+agc_vec_fn(at)(const agc_vec_t vec[static 1], int32_t pos);
+
+AGC_VEC_API T *
+agc_vec_fn(ptr_at)(const agc_vec_t vec[static 1], int32_t pos);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(reserve)(agc_vec_t vec[static 1], int32_t new_cap);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(grow)(agc_vec_t vec[static 1], int32_t min_cap);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(resize)(agc_vec_t vec[static 1], int32_t new_len);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(shrink_to_fit)(agc_vec_t vec[static 1]);
+
+#if agc_vec_may_use_stack
+AGC_VEC_API agc_err_t 
+agc_vec_fn(buf_switch_to_heap)(agc_vec_t vec[static 1]);
+#endif
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(put_cpy)(agc_vec_t vec[static 1], int32_t pos, T value);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(push_mv)(agc_vec_t vec[static 1], T **value);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(push_cpy)(agc_vec_t vec[static 1], T value);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(array_cpy)(agc_vec_t vec[static 1],
+                                            int32_t   pos,
+                                            int32_t   count,
+                                            T         arr[static count]);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(array_mv)(agc_vec_t vec[static 1],
+                                           int32_t   pos,
+                                           T       **arr,
+                                           int32_t   count);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(pop)(agc_vec_t vec[static 1], T OUT_value[static 1]);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(erase)(agc_vec_t vec[static 1], int32_t pos);
+
+AGC_VEC_API void 
+agc_vec_fn(clear)(agc_vec_t vec[static 1]);
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j);
+
+#if agc_vec_element_compare
+agc_vec_fn(find)(const agc_vec_t vec[static 1], const T *value, int32_t *OUT_pos);
+
+AGC_VEC_API bool
+agc_vec_fn(contains)(const agc_vec_t vec[static 1], const T *value);
+#endif
+
+AGC_VEC_API agc_err_t 
+agc_vec_fn(merge_subvec)(agc_vec_t           vec[static 1],
+                                   int32_t             pos,
+                                   agc_vec_t          *subvec,
+                                   int32_t             first,
+                                   int32_t             last);
+#if agc_vec_element_deepcopy
+AGC_VEC_API agc_err_t 
+agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1],
+                                               int32_t         pos,
+                                               T             **OUT_value);
+#endif
+
+// clang-format on
+
+/* Simple accessors do not return agc_err_t, which is a bit odd,
+ * but a necessary evil, as the out parameter convention used
+ * here might become a hassle to client code and to the compiler.*/
+
+AGC_VEC_API int32_t
+agc_vec_fn(len)(const agc_vec_t vec[static 1])
 {
-	if (!OUT_vec) return AGC_ERR_NULL;
-	if (!stack_buf) return AGC_ERR_NULL;
-
-	OUT_vec->len       = 0;
-	OUT_vec->cap       = count;
-	OUT_vec->stack_buf = true;
-	OUT_vec->buf       = stack_buf;
-
-	return AGC_OK;
+	if (!vec) return -1;
+	return vec->len;
 }
 
-	#define agc_vec_init_from_stack_buf(vec, arr)                                              \
-		agc_vec_fn(init_from_stack_buf)((vec), agc_countof(arr), (arr))
-#endif
+AGC_VEC_API int32_t
+agc_vec_fn(cap)(const agc_vec_t vec[static 1])
+{
+	if (!vec) return -1;
+	return vec->cap;
+}
+/* This returns an empty object on failure */
+AGC_VEC_API T
+agc_vec_fn(at)(const agc_vec_t vec[static 1], int32_t pos)
+{
+	if (!vec || !vec->buf || pos >= vec->len || pos < 0) return (T){ };
+	return vec->buf[pos];
+}
 
-#if agc_vec_may_use_stack
-AGC_VEC_API agc_err_t agc_vec_fn(buf_switch_to_heap)(agc_vec_t vec[static 1]);
-#endif
+AGC_VEC_API T *
+agc_vec_fn(ptr_at)(const agc_vec_t vec[static 1], int32_t pos)
+{
+	if (!vec || !vec->buf || pos >= vec->len || pos < 0) return nullptr;
+	return vec->buf + pos;
+}
 
 AGC_VEC_API agc_err_t
 agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap)
@@ -126,6 +267,24 @@ agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap)
 
 	return AGC_OK;
 }
+
+#if agc_vec_may_use_stack
+AGC_VEC_API agc_err_t
+agc_vec_fn(init_from_stack_buf)(agc_vec_t OUT_vec[static 1],
+                                int32_t   count,
+                                T         stack_buf[static count])
+{
+	if (!OUT_vec) return AGC_ERR_NULL;
+	if (!stack_buf) return AGC_ERR_NULL;
+
+	OUT_vec->len       = 0;
+	OUT_vec->cap       = count;
+	OUT_vec->stack_buf = true;
+	OUT_vec->buf       = stack_buf;
+
+	return AGC_OK;
+}
+#endif
 
 AGC_VEC_API void
 agc_vec_fn(cleanup)(agc_vec_t vec[static 1])
@@ -284,7 +443,7 @@ agc_vec_fn(push_cpy)(agc_vec_t vec[static 1], T value)
 }
 
 AGC_VEC_API agc_err_t
-agc_vec_fn(array_cpy)(agc_vec_t vec[static 1], int32_t pos, T arr[static 1], int32_t count)
+agc_vec_fn(array_cpy)(agc_vec_t vec[static 1], int32_t pos, int32_t count, T arr[static count])
 {
 	if (!vec || !arr) return AGC_ERR_NULL;
 	if (pos < 0 || count < 0) return AGC_ERR_INVALID;
@@ -307,7 +466,7 @@ agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t coun
 	if (!vec || !arr) return AGC_ERR_NULL;
 	agc_err_t err = AGC_OK;
 
-	err = agc_vec_fn(array_cpy)(vec, pos, *arr, count);
+	err = agc_vec_fn(array_cpy)(vec, pos, count, *arr);
 	if (err) return err;
 
 	agc_vec_free(*arr);
@@ -334,7 +493,7 @@ agc_vec_fn(buf_switch_to_heap)(agc_vec_t vec[static 1])
 		return err;
 	}
 
-	err = agc_vec_fn(array_cpy)(vec, 0, stack_buf, old_len);
+	err = agc_vec_fn(array_cpy)(vec, 0, old_len, stack_buf);
 	if (err)
 	{
 		agc_vec_free(vec->buf);
@@ -426,6 +585,28 @@ agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j)
 
 	return AGC_OK;
 }
+#if agc_vec_element_compare
+AGC_VEC_API agc_err_t
+agc_vec_fn(find)(const agc_vec_t vec[static 1], const T *value, int32_t *OUT_pos)
+{
+	if (!vec || !value) return AGC_ERR_NULL;
+	for (int32_t i = 0; i < vec->len; i++)
+	{
+		if (agc_vec_element_compare(vec->buf + i, value) == 0)
+		{
+			if (OUT_pos) *OUT_pos = i;
+			return AGC_OK;
+		}
+	}
+	return AGC_ERR_NOT_FOUND;
+}
+
+AGC_VEC_API bool
+agc_vec_fn(contains)(const agc_vec_t vec[static 1], const T *value)
+{
+	return (agc_vec_fn(find)(vec, value, nullptr) == AGC_OK);
+}
+#endif
 
 AGC_VEC_API agc_err_t
 agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
@@ -441,7 +622,7 @@ agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
 
 	int32_t count = last - first;
 
-	err = agc_vec_fn(array_cpy)(vec, pos, subvec->buf + first, count);
+	err = agc_vec_fn(array_cpy)(vec, pos, count, subvec->buf + first);
 	if (err) return err;
 
 	memmove(subvec->buf + first, subvec->buf + last, (subvec->len - last) * sizeof(T));
@@ -460,4 +641,33 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 	*OUT_value = agc_vec_element_deepcopy(vec->buf + pos);
 	return *OUT_value ? AGC_OK : AGC_ERR_CALLBACK;
 }
+#endif
+
+#warning "Undefining macros from the previous vector"
+#ifndef AGC_VEC_GROWTH_FACTOR
+	#undef AGC_VEC_GROWTH_FACTOR
+#endif
+#ifndef AGC_VEC_DEFAULT_CAP
+	#undef AGC_VEC_DEFAULT_CAP
+#endif
+#ifndef agc_vec_element_cleanup
+	#undef agc_vec_element_cleanup
+#endif
+#ifndef agc_vec_may_use_stack
+	#undef agc_vec_may_use_stack
+#endif
+#ifndef agc_vec_element_deepcopy
+	#undef agc_vec_element_deepcopy
+#endif
+#ifndef agc_vec_element_compare
+	#undef agc_vec_element_compare
+#endif
+#ifndef agc_vec_alloc
+	#undef agc_vec_alloc
+#endif
+#ifndef agc_vec_realloc
+	#undef agc_vec_realloc
+#endif
+#ifndef agc_vec_free
+	#undef agc_vec_free
 #endif
