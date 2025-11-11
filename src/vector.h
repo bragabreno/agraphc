@@ -7,67 +7,80 @@
 
 #define AGC_VEC_API [[maybe_unused]] static
 
-#ifndef AGC_VEC_GROWTH_FACTOR
-	#define AGC_VEC_GROWTH_FACTOR 2
-#endif
-
-#ifndef AGC_VEC_DEFAULT_CAP
-	#define AGC_VEC_DEFAULT_CAP 8
-#endif
-
-#ifndef AGC_VEC_PREFIX
-	#error "You must define AGC_VEC_PREFIX prior to the inclusion of vector.h"
+#ifndef AGC_VEC_NAMESPACE
+	#error "You must define AGC_VEC_NAMESPACE prior to the inclusion of vector.h"
 #endif
 #ifndef T
 	#error "You must define T prior to the inclusion of vector.h"
 #endif
 
 /* Handle macro-generated names nicely */
-#define agc_vec_t agc_paste2(AGC_VEC_PREFIX, _t)
-#define agc_vec_fn(name) agc_paste3(AGC_VEC_PREFIX, _, name)
+#define agc_vec_t agc_paste2(AGC_VEC_NAMESPACE, _t)
+#define agc_vec_fn(name) agc_paste3(AGC_VEC_NAMESPACE, _, name)
 
+/* ---------------------- Vector Interface Configuration ---------------------- */
+#warning "The functions corresponding to the implementation of the interface must match:"
+#warning "<AGC_VEC_NAMESPACE>_element_<operation>"
+#warning "Otherwise, you might get cryptic error messages from preprocessor failures."
+
+/* Trivial cleanup handler */
 AGC_VEC_API void
 agc_vec_fn(noop)(T *)
 
 {
 	(void)1;
 }
-
-/*                  Vector interface                 */
-
-/* Trivially cleaned up */
-#ifndef agc_vec_element_cleanup
+#ifdef agc_vec_implements_element_cleanup
+	#define agc_vec_element_cleanup agc_vec_fn(element_cleanup)
+#else
 	#define agc_vec_element_cleanup agc_vec_fn(noop)
 #endif
 
-/* Buffer */
-#ifndef agc_vec_may_use_stack
+/* Stack buffer support */
+#ifdef agc_vec_implements_stack_buf
 	#define agc_vec_may_use_stack 1
+#else
+	#define agc_vec_may_use_stack 0
 #endif
 
-/* Deep-copyable */
-#ifndef agc_vec_element_deepcopy
-	#define agc_vec_may_use_element_deepcopy 0
-#else
+/* Deep-copy support */
+#ifdef agc_vec_implements_element_deepcopy
 	#define agc_vec_may_use_element_deepcopy 1
-#endif
-
-/* Comparable */
-#ifndef agc_vec_element_compare
-	#define agc_vec_may_use_element_compare 0
+	#define agc_vec_element_deepcopy agc_vec_fn(element_deepcopy)
 #else
-	#define agc_vec_may_use_element_compare 1
+	#define agc_vec_may_use_element_deepcopy 0
 #endif
 
-/* Allocator */
-#ifndef agc_vec_alloc
+/* Comparison support */
+#ifdef agc_vec_implements_element_compare
+	#define agc_vec_may_use_element_compare 1
+	#define agc_vec_element_compare agc_vec_fn(element_compare)
+#else
+	#define agc_vec_may_use_element_compare 0
+#endif
+
+/* Allocator configuration */
+#ifdef agc_vec_implements_custom_alloc
+	#define agc_vec_alloc agc_vec_fn(alloc)
+	#define agc_vec_realloc agc_vec_fn(realloc)
+	#define agc_vec_free agc_vec_fn(free)
+#else
+	#warning                                                                                   \
+	        "Defaulting to stdlib memory management functions. The inclusion of stdlib.h is needed"
 	#define agc_vec_alloc malloc
-#endif
-#ifndef agc_vec_realloc
 	#define agc_vec_realloc realloc
-#endif
-#ifndef agc_vec_free
 	#define agc_vec_free free
+#endif
+
+/* Growth and capacity defaults */
+#ifdef AGC_VEC_GROWTH_FACTOR
+#else
+	#define AGC_VEC_GROWTH_FACTOR 2
+#endif
+
+#ifdef AGC_VEC_DEFAULT_CAP
+#else
+	#define AGC_VEC_DEFAULT_CAP 8
 #endif
 
 // clang-format off
@@ -75,16 +88,21 @@ agc_vec_fn(noop)(T *)
 #if (AGC_VEC_GROWTH_FACTOR) < 1
 #  error "AGC_VEC_GROWTH_FACTOR must be >= 1"
 #endif
+
 #if (AGC_VEC_DEFAULT_CAP) <= 0
 #  error "AGC_VEC_DEFAULT_CAP must be > 0"
 #endif
+
 agc_validate_interface(agc_vec_element_cleanup, void (*)(T *))
+
 #if agc_vec_may_use_element_deepcopy
-agc_validate_interface(agc_vec_element_deepcopy, agc_err_t (*)(T *))
+agc_validate_interface(agc_vec_element_deepcopy, T* (*)(const T *))
 #endif
+
 #if agc_vec_may_use_element_compare
 agc_validate_interface(agc_vec_element_compare, int32_t (*)(const T *, const T *))
 #endif
+/* ------------------------------------------------------------------------ */
 
 
 typedef struct agc_vec_t
@@ -132,6 +150,9 @@ agc_vec_fn(len)(const agc_vec_t vec[static 1]);
 
 AGC_VEC_API int32_t
 agc_vec_fn(cap)(const agc_vec_t vec[static 1]);
+
+AGC_VEC_API int32_t
+agc_vec_fn(empty)(const agc_vec_t vec[static 1]);
 
 AGC_VEC_API T
 agc_vec_fn(at)(const agc_vec_t vec[static 1], int32_t pos);
@@ -184,7 +205,7 @@ AGC_VEC_API agc_err_t
 agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value);
 
 AGC_VEC_API agc_err_t 
-agc_vec_fn(pop)(agc_vec_t vec[static 1], T OUT_value[static 1]);
+agc_vec_fn(pop)(agc_vec_t vec[static 1], T *OUT_value);
 
 AGC_VEC_API agc_err_t 
 agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last);
@@ -236,6 +257,13 @@ agc_vec_fn(cap)(const agc_vec_t vec[static 1])
 {
 	if (!vec) return -1;
 	return vec->cap;
+}
+
+AGC_VEC_API int32_t
+agc_vec_fn(empty)(const agc_vec_t vec[static 1])
+{
+	if (!vec) return -1;
+	return (vec->len == 0);
 }
 
 /* This returns an empty object on failure */
@@ -535,7 +563,7 @@ agc_vec_fn(pop_at)(agc_vec_t vec[static 1], int32_t pos, T *OUT_value)
 }
 
 AGC_VEC_API agc_err_t
-agc_vec_fn(pop)(agc_vec_t vec[static 1], T OUT_value[static 1])
+agc_vec_fn(pop)(agc_vec_t vec[static 1], T *OUT_value)
 {
 	return agc_vec_fn(pop_at)(vec, vec->len - 1, OUT_value);
 }
@@ -590,6 +618,7 @@ agc_vec_fn(swap_elements)(agc_vec_t vec[static 1], int32_t i, int32_t j)
 
 	return AGC_OK;
 }
+
 #if agc_vec_may_use_element_compare
 AGC_VEC_API agc_err_t
 agc_vec_fn(find)(const agc_vec_t vec[static 1], const T *value, int32_t *OUT_pos)
@@ -648,31 +677,58 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 }
 #endif
 
-#warning "Undefining macros from the previous vector"
+/* ---------------------- Vector Interface Cleanup ---------------------- */
+#ifdef AGC_VEC_NAMESPACE
+	#undef AGC_VEC_NAMESPACE
+#endif
+
+/* Growth & Capacity */
 #ifdef AGC_VEC_GROWTH_FACTOR
 	#undef AGC_VEC_GROWTH_FACTOR
 #endif
 #ifdef AGC_VEC_DEFAULT_CAP
 	#undef AGC_VEC_DEFAULT_CAP
 #endif
+
+/* Cleanup Handler */
 #ifdef agc_vec_element_cleanup
 	#undef agc_vec_element_cleanup
 #endif
+#ifdef agc_vec_implements_element_cleanup
+	#undef agc_vec_implements_element_cleanup
+#endif
+
+/* Stack Buffer */
 #ifdef agc_vec_may_use_stack
 	#undef agc_vec_may_use_stack
+#endif
+#ifdef agc_vec_implements_stack_buf
+	#undef agc_vec_implements_stack_buf
+#endif
+
+/* Deep Copy */
+#ifdef agc_vec_may_use_element_deepcopy
+	#undef agc_vec_may_use_element_deepcopy
 #endif
 #ifdef agc_vec_element_deepcopy
 	#undef agc_vec_element_deepcopy
 #endif
-#ifdef agc_vec_may_use_element_deepcopy
-	#undef agc_vec_may_use_element_deepcopy
+#ifdef agc_vec_implements_element_deepcopy
+	#undef agc_vec_implements_element_deepcopy
+#endif
+
+/* Comparison */
+#ifdef agc_vec_may_use_element_compare
+	#undef agc_vec_may_use_element_compare
 #endif
 #ifdef agc_vec_element_compare
 	#undef agc_vec_element_compare
 #endif
-#ifdef agc_vec_may_use_element_compare
-	#undef agc_vec_may_use_element_compare
+#ifdef agc_vec_implements_element_compare
+	#undef agc_vec_implements_element_compare
 #endif
+
+/* Allocator */
 #ifdef agc_vec_alloc
 	#undef agc_vec_alloc
 #endif
@@ -681,4 +737,7 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 #endif
 #ifdef agc_vec_free
 	#undef agc_vec_free
+#endif
+#ifdef agc_vec_implements_custom_alloc
+	#undef agc_vec_implements_custom_alloc
 #endif
