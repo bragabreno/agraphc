@@ -20,5 +20,5 @@ agc_error_str(agc_err_t e)
 void
 agc_write_error(agc_err_t e, FILE *f)
 {
-	fprintf(f, "%s: %s\n", agc_error_str(e));
+	fprintf(f, "Error: %s\n", agc_error_str(e));
 }
