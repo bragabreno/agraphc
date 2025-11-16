@@ -1,5 +1,6 @@
 #include <stdckdint.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,6 +38,14 @@ agc_vec_fn(noop)(T *)
 	#define agc_vec_element_cleanup agc_vec_fn(noop)
 #endif
 
+/* Move semantics */
+#ifdef agc_vec_implements_element_move
+	#define agc_vec_may_use_custom_element_move 1
+	#define agc_vec_element_move agc_vec_fn(element_move)
+#else
+	#define agc_vec_may_use_custom_element_move 0
+#endif
+
 /* Stack buffer support */
 #ifdef agc_vec_implements_stack_buf
 	#define agc_vec_may_use_stack 1
@@ -58,6 +67,14 @@ agc_vec_fn(noop)(T *)
 	#define agc_vec_element_compare agc_vec_fn(element_compare)
 #else
 	#define agc_vec_may_use_element_compare 0
+#endif
+
+/* To string support */
+#ifdef agc_vec_implements_element_to_string
+	#define agc_vec_may_use_element_to_string 1
+	#define agc_vec_element_to_string agc_vec_fn(element_to_string)
+#else
+	#define agc_vec_may_use_element_to_string 0
 #endif
 
 /* Allocator configuration */
@@ -96,6 +113,10 @@ agc_vec_fn(noop)(T *)
 
 agc_validate_interface(agc_vec_element_cleanup, void (*)(T *))
 
+#if agc_vec_may_use_custom_element_move
+agc_validate_interface(agc_vec_element_move, void (*)(T *, T *))
+#endif
+
 #if agc_vec_may_use_element_deepcopy
 agc_validate_interface(agc_vec_element_deepcopy, T* (*)(const T *))
 #endif
@@ -131,8 +152,6 @@ typedef struct agc_vec_t
 
 
 
-/* The "move"/"copy" behavior may be a bit deceiving at first,
- * so I might document it eventually                        */
 AGC_VEC_API agc_err_t 
 agc_vec_fn(init)(agc_vec_t OUT_vec[static 1], int32_t init_cap);
 
@@ -182,10 +201,10 @@ AGC_VEC_API agc_err_t
 agc_vec_fn(put_cpy)(agc_vec_t vec[static 1], int32_t pos, T value);
 
 AGC_VEC_API agc_err_t 
-agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value);
+agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T *value);
 
 AGC_VEC_API agc_err_t 
-agc_vec_fn(push_mv)(agc_vec_t vec[static 1], T **value);
+agc_vec_fn(push_mv)(agc_vec_t vec[static 1], T *value);
 
 AGC_VEC_API agc_err_t 
 agc_vec_fn(push_cpy)(agc_vec_t vec[static 1], T value);
@@ -199,7 +218,7 @@ agc_vec_fn(array_cpy)(agc_vec_t vec[static 1],
 AGC_VEC_API agc_err_t 
 agc_vec_fn(array_mv)(agc_vec_t vec[static 1],
                                            int32_t   pos,
-                                           T       **arr,
+                                           T       *arr,
                                            int32_t   count);
 
 AGC_VEC_API agc_err_t 
@@ -463,7 +482,7 @@ agc_vec_fn(put_cpy)(agc_vec_t vec[static 1], int32_t pos, T value)
 }
 
 AGC_VEC_API agc_err_t
-agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value)
+agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T *value)
 {
 	if (!vec || !value) return AGC_ERR_NULL;
 	if (pos < 0) return AGC_ERR_INVALID;
@@ -474,16 +493,20 @@ agc_vec_fn(put_mv)(agc_vec_t vec[static 1], int32_t pos, T **value)
 	if (err) return err;
 
 	memmove(vec->buf + pos + 1, vec->buf + pos, (vec->len - pos) * sizeof(T));
-	memcpy(vec->buf + pos, *value, sizeof(T));
-	agc_vec_free(*value);
-	*value = nullptr;
+
+#if agc_vec_may_use_custom_element_move
+	agc_vec_element_move(vec->buf + pos, value);
+#else
+	memcpy(vec->buf + pos, value, sizeof(T));
+	memset(value, 0, sizeof(T));
+#endif
 	vec->len++;
 
 	return err;
 }
 
 AGC_VEC_API agc_err_t
-agc_vec_fn(push_mv)(agc_vec_t vec[static 1], T **value)
+agc_vec_fn(push_mv)(agc_vec_t vec[static 1], T *value)
 {
 	return agc_vec_fn(put_mv)(vec, vec->len, value);
 }
@@ -513,17 +536,31 @@ agc_vec_fn(array_cpy)(agc_vec_t vec[static 1], int32_t pos, int32_t count, T arr
 }
 
 AGC_VEC_API agc_err_t
-agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T **arr, int32_t count)
+agc_vec_fn(array_mv)(agc_vec_t vec[static 1], int32_t pos, T *arr, int32_t count)
 {
 	if (!vec || !arr) return AGC_ERR_NULL;
+	if (pos < 0 || count < 0) return AGC_ERR_INVALID;
+	if (pos > vec->len) return AGC_ERR_OOB;
 	agc_err_t err = AGC_OK;
 
-	err = agc_vec_fn(array_cpy)(vec, pos, count, *arr);
+	err = agc_vec_fn(grow)(vec, vec->len + count);
 	if (err) return err;
 
-	agc_vec_free(*arr);
-	*arr = nullptr;
-	return err;
+	memmove(vec->buf + pos + count, vec->buf + pos, (vec->len - pos) * sizeof(T));
+
+#if agc_vec_may_use_custom_element_move
+	for (int32_t i = 0; i < count; i++)
+	{
+		agc_vec_element_move(vec->buf + pos + i, arr + i);
+	}
+#else
+	memcpy(vec->buf + pos, arr, count * sizeof(T));
+	memset(arr, 0, count * sizeof(T));
+#endif
+
+	vec->len += count;
+
+	return AGC_OK;
 }
 
 #if agc_vec_may_use_stack
@@ -681,6 +718,10 @@ agc_vec_fn(contains)(const agc_vec_t vec[static 1], const T *value)
 }
 #endif
 
+#if agc_vec_may_use_element_to_string
+/* TODO: printing functionality */
+#endif
+
 AGC_VEC_API agc_err_t
 agc_vec_fn(merge_subvec)(agc_vec_t  vec[static 1],
                          int32_t    pos,
@@ -721,7 +762,6 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 	#undef AGC_VEC_NAMESPACE
 #endif
 
-/* Growth & Capacity */
 #ifdef AGC_VEC_GROWTH_FACTOR
 	#undef AGC_VEC_GROWTH_FACTOR
 #endif
@@ -729,7 +769,6 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 	#undef AGC_VEC_DEFAULT_CAP
 #endif
 
-/* Cleanup Handler */
 #ifdef agc_vec_element_cleanup
 	#undef agc_vec_element_cleanup
 #endif
@@ -737,7 +776,16 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 	#undef agc_vec_implements_element_cleanup
 #endif
 
-/* Stack Buffer */
+#ifdef agc_vec_may_use_custom_element_move
+	#undef agc_vec_may_use_custom_element_move
+#endif
+#ifdef agc_vec_element_move
+	#undef agc_vec_element_move
+#endif
+#ifdef agc_vec_implements_element_move
+	#undef agc_vec_implements_element_move
+#endif
+
 #ifdef agc_vec_may_use_stack
 	#undef agc_vec_may_use_stack
 #endif
@@ -745,7 +793,6 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 	#undef agc_vec_implements_stack_buf
 #endif
 
-/* Deep Copy */
 #ifdef agc_vec_may_use_element_deepcopy
 	#undef agc_vec_may_use_element_deepcopy
 #endif
@@ -756,7 +803,6 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 	#undef agc_vec_implements_element_deepcopy
 #endif
 
-/* Comparison */
 #ifdef agc_vec_may_use_element_compare
 	#undef agc_vec_may_use_element_compare
 #endif
@@ -767,7 +813,16 @@ agc_vec_fn(get_deepcopy)(const agc_vec_t vec[static 1], int32_t pos, T **OUT_val
 	#undef agc_vec_implements_element_compare
 #endif
 
-/* Allocator */
+#ifdef agc_vec_may_use_element_to_string
+	#undef agc_vec_may_use_element_to_string
+#endif
+#ifdef agc_vec_element_to_string
+	#undef agc_vec_element_to_string
+#endif
+#ifdef agc_vec_implements_element_to_string
+	#undef agc_vec_implements_element_to_string
+#endif
+
 #ifdef agc_vec_alloc
 	#undef agc_vec_alloc
 #endif
