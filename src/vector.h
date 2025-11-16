@@ -159,7 +159,7 @@ AGC_VEC_API T
 agc_vec_fn(at)(const agc_vec_t vec[static 1], int32_t pos);
 
 AGC_VEC_API T *
-agc_vec_fn(ptr_at)(const agc_vec_t vec[static 1], int32_t pos);
+agc_vec_fn(ptr_at)( agc_vec_t vec[static 1], int32_t pos);
 
 AGC_VEC_API agc_err_t 
 agc_vec_fn(reserve)(agc_vec_t vec[static 1], int32_t new_cap);
@@ -213,6 +213,9 @@ agc_vec_fn(erase_range)(agc_vec_t vec[static 1], int32_t first, int32_t last);
 
 AGC_VEC_API agc_err_t 
 agc_vec_fn(erase)(agc_vec_t vec[static 1], int32_t pos);
+
+AGC_VEC_API agc_err_t
+agc_vec_fn(swap_and_erase)(agc_vec_t vec[static 1], int32_t pos);
 
 AGC_VEC_API void 
 agc_vec_fn(clear)(agc_vec_t vec[static 1]);
@@ -276,7 +279,7 @@ agc_vec_fn(at)(const agc_vec_t vec[static 1], int32_t pos)
 }
 
 AGC_VEC_API T *
-agc_vec_fn(ptr_at)(const agc_vec_t vec[static 1], int32_t pos)
+agc_vec_fn(ptr_at)(agc_vec_t vec[static 1], int32_t pos)
 {
 	if (!vec || !vec->buf || pos >= vec->len || pos < 0) return nullptr;
 	return vec->buf + pos;
@@ -607,6 +610,25 @@ AGC_VEC_API agc_err_t
 agc_vec_fn(erase)(agc_vec_t vec[static 1], int32_t pos)
 {
 	return agc_vec_fn(erase_range)(vec, pos, pos + 1);
+}
+
+AGC_VEC_API agc_err_t
+agc_vec_fn(swap_and_erase)(agc_vec_t vec[static 1], int32_t pos)
+{
+	if (!vec) return AGC_ERR_NULL;
+	if (pos < 0 || pos >= vec->len) return AGC_ERR_OOB;
+
+	if (pos == vec->len - 1)
+	{
+		return agc_vec_fn(pop)(vec, nullptr);
+	}
+
+	agc_vec_element_cleanup(vec->buf + pos);
+	memcpy(vec->buf + pos, vec->buf + vec->len - 1, sizeof(T));
+
+	vec->len--;
+
+	return AGC_OK;
 }
 
 AGC_VEC_API void
